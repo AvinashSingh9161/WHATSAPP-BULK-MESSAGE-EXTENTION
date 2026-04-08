@@ -56,31 +56,36 @@ async function simulatePaste(element, text) {
   element.dispatchEvent(pasteEvent);
 }
 
-async function attachFile(fileDataUrl, fileName, fileType) {
+async function attachFiles(filesArray) {
   try {
-    // Click attachment clip icon
-    const attachBtnSelector = 'div[title="Attach"], span[data-icon="clip"]';
+    // Click attachment clip/plus icon
+    const attachBtnSelector = 'div[title="Attach"], span[data-icon="clip"], span[data-icon="plus"]';
     const attachBtn = await waitForElement(attachBtnSelector, 5000);
     attachBtn.closest('div[role="button"]').click();
     await DELAY(500);
 
-    // Find the right input based on file type
-    const isImage = fileType.startsWith('image/');
-    const inputSelector = isImage
+    // Find the right input based on file types
+    // Photos and Videos should use the image input, everything else uses document input (*)
+    const hasNonMedia = filesArray.some(f => !(f.type.startsWith('image/') || f.type.startsWith('video/')));
+    const inputSelector = !hasNonMedia
       ? 'input[accept="image/*,video/mp4,video/3gpp,video/quicktime"]'
       : 'input[accept="*"]';
 
     const fileInput = await waitForElement(inputSelector, 5000);
-    const file = dataUrlToFile(fileDataUrl, fileName, fileType);
 
     // Create DataTransfer to simulate drop
     const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(file);
+    for (let f of filesArray) {
+       const file = dataUrlToFile(f.dataUrl, f.name, f.type);
+       dataTransfer.items.add(file);
+    }
+    
     fileInput.files = dataTransfer.files;
 
     // Dispatch change event
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-    await DELAY(2000); // Wait for preview to load
+    // Wait longer for multiple files preview to load
+    await DELAY(3000 + (filesArray.length * 500)); 
 
     // Click send on attachment modal
     const sendBtnSelector = 'button[aria-label="Send"], span[data-icon="send"], span[data-icon="wds-ic-send-filled"]';
@@ -92,11 +97,11 @@ async function attachFile(fileDataUrl, fileName, fileType) {
     return true;
   } catch (error) {
     console.error('WA Bulk Sender - Attach error:', error);
-    return false;
+    throw error;
   }
 }
 
-async function sendMessage(message, fileDataUrl, fileName, fileType) {
+async function sendMessage(message, files) {
   try {
     // Handle invalid number popup
     const invalidSelector = 'div[data-animate-modal-popup="true"]';
@@ -112,9 +117,8 @@ async function sendMessage(message, fileDataUrl, fileName, fileType) {
     const chatBox = await waitForElement(chatBoxSelector, 15000); // Wait up to 15s because web.whatsapp is incredibly slow
 
     // If file is attached, process it first
-    if (fileDataUrl) {
-      const attachSuccess = await attachFile(fileDataUrl, fileName, fileType);
-      if (!attachSuccess) throw new Error('Failed to attach file');
+    if (files && files.length > 0) {
+      await attachFiles(files);
       // Adding additional delay to ensure attachment is sent if message is also present
       if(message) await DELAY(2000);
     }
@@ -146,12 +150,54 @@ async function sendMessage(message, fileDataUrl, fileName, fileType) {
   }
 }
 
+async function extractGroup() {
+    return new Promise((resolve) => {
+        let numbers = new Set();
+        const phoneRegex = /\+?\d[\d\s\-\(\)]{9,20}\d/g;
+        
+        // 1. Check list items
+        const listItems = document.querySelectorAll('div[role="listitem"]');
+        listItems.forEach(item => {
+            const match = item.innerText.match(phoneRegex);
+            if (match) {
+                match.forEach(m => {
+                    const clean = m.replace(/\D/g, '');
+                    if (clean.length >= 10) numbers.add(clean);
+                });
+            }
+        });
+        
+        // 2. Check title attributes on spans (often used for numbers in WA)
+        document.querySelectorAll('span[title]').forEach(span => {
+            const title = span.getAttribute('title');
+            if (title) {
+                const match = title.match(phoneRegex);
+                if (match) {
+                     match.forEach(m => {
+                        const clean = m.replace(/\D/g, '');
+                        if (clean.length >= 10) numbers.add(clean);
+                    });
+                }
+            }
+        });
+        
+        resolve(Array.from(numbers));
+    });
+}
+
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'sendMessage') {
-    sendMessage(request.message, request.fileDataUrl, request.fileName, request.fileType)
+    sendMessage(request.message, request.files)
       .then(result => sendResponse(result))
       .catch(err => sendResponse({ success: false, error: err.toString() }));
     return true; // Keep channel open for async
+  }
+
+  if (request.action === 'extractGroup') {
+    extractGroup().then(contacts => {
+      sendResponse({ contacts });
+    });
+    return true; // Keep channel open
   }
 });

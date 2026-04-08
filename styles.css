@@ -302,11 +302,20 @@ html, body {
 .drop-link { color: var(--accent-green); font-weight: 600; }
 .drop-hint { font-size: 10px; color: var(--text-muted); }
 
+.file-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
 .file-preview {
   display: flex;
   align-items: center;
   gap: 10px;
   text-align: left;
+  background: var(--bg-hover);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
 }
 .file-preview.hidden { display: none; }
 .file-preview-icon { font-size: 28px; flex-shrink: 0; }

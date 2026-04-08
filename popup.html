@@ -66,6 +66,12 @@
         </svg>
         Logs
       </button>
+      <button class="tab-btn" data-tab="quickchat" id="tab-quickchat">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/>
+        </svg>
+        Quick Chat
+      </button>
     </nav>
 
     <!-- Tab Content -->
@@ -105,23 +111,16 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
             </svg>
-            Attachment <span class="optional-tag">optional</span>
+            Attachments <span class="optional-tag">optional, multi</span>
           </label>
           <div id="drop-zone" class="drop-zone">
-            <input type="file" id="file-input" class="file-input" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" />
+            <input type="file" id="file-input" class="file-input" multiple />
             <div class="drop-zone-content" id="drop-zone-content">
               <div class="drop-icon">📎</div>
-              <p class="drop-text">Drop file or <span class="drop-link">browse</span></p>
-              <p class="drop-hint">JPG, PNG, PDF, DOC up to 16MB</p>
+              <p class="drop-text">Drop files or <span class="drop-link">browse</span></p>
+              <p class="drop-hint">Select any files (Images, Videos, Docs, Zips) up to 16MB total</p>
             </div>
-            <div class="file-preview hidden" id="file-preview">
-              <div class="file-preview-icon" id="file-preview-icon">📄</div>
-              <div class="file-preview-info">
-                <span class="file-preview-name" id="file-preview-name"></span>
-                <span class="file-preview-size" id="file-preview-size"></span>
-              </div>
-              <button class="file-remove-btn" id="file-remove-btn" title="Remove file">✕</button>
-            </div>
+            <div class="file-preview-list" id="file-preview-list"></div>
           </div>
         </div>
 
@@ -227,7 +226,7 @@
           <textarea
             id="contacts-manual"
             class="textarea"
-            placeholder="919876543210&#10;918765432109&#10;917654321098&#10;&#10;Enter one number per line with country code"
+            placeholder="Name, 919876543210&#10;Rahul, 918765432101&#10;917654321098&#10;&#10;Enter name (optional) and number"
             rows="6"
           ></textarea>
           <div class="contacts-actions">
@@ -235,9 +234,15 @@
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <polyline points="20,6 9,17 4,12"/>
               </svg>
-              Parse &amp; Validate
+              Parse
             </button>
-            <button id="btn-clear-contacts" class="btn btn-ghost">Clear All</button>
+            <button id="btn-extract-group" class="btn btn-accent" title="Open a group on WhatsApp Web first">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+              </svg>
+              Extract Group
+            </button>
+            <button id="btn-clear-contacts" class="btn btn-ghost">Clear</button>
           </div>
         </div>
 
@@ -320,6 +325,21 @@
             <input type="number" id="daily-limit" class="number-input" value="80" min="1" max="200" />
             <span class="input-hint">Recommended: 50–100 to avoid bans</span>
           </div>
+
+          <!-- SMART SLEEP ANTI BAN -->
+          <div class="input-group">
+            <label class="input-label">Smart Sleep (Anti-Ban)</label>
+            <div class="input-row">
+              <div class="input-group">
+                <span class="input-hint" style="margin-top:0; margin-bottom:4px;">Pause after (msgs)</span>
+                <input type="number" id="smart-sleep-count" class="number-input" value="50" min="5" max="500" />
+              </div>
+              <div class="input-group">
+                <span class="input-hint" style="margin-top:0; margin-bottom:4px;">Sleep for (mins)</span>
+                <input type="number" id="smart-sleep-mins" class="number-input" value="10" min="1" max="60" />
+              </div>
+            </div>
+          </div>
           <div class="toggle-group">
             <div class="toggle-row">
               <div>
@@ -382,6 +402,31 @@
               <line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
             Export Log as CSV
+          </button>
+        </div>
+      </div>
+
+      <!-- QUICK CHAT TAB -->
+      <div class="tab-panel" id="panel-quickchat">
+        <div class="section">
+          <label class="section-label">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/>
+            </svg>
+            Quick Chat
+          </label>
+          <div style="margin-bottom:12px; font-size:11px; color:var(--text-secondary);">
+            Open a WhatsApp chat with any number instantly, without saving them to your contacts.
+          </div>
+          <div class="input-group">
+            <label class="input-label">Phone Number (with Country Code)</label>
+            <input type="text" id="quickchat-number" class="number-input" placeholder="e.g. 919876543210" />
+          </div>
+          <button id="btn-quickchat-open" class="btn btn-primary full-width" style="margin-top: 10px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5,3 19,12 5,21"/>
+            </svg>
+            Open Chat
           </button>
         </div>
       </div>

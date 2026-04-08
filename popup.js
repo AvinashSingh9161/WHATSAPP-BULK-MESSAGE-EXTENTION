@@ -6,11 +6,12 @@
 
 // ── State ──────────────────────────────────────────────
 const State = {
-  contacts:       [],    // array of { number, valid }
-  attachedFile:   null,  // File object
+  contacts:       [],    // array of { number, name, valid }
+  attachedFiles:  [],    // array of File objects
   campaign: {
     running:      false,
     paused:       false,
+    loopActive:   false,
     currentIndex: 0,
     sent:         0,
     failed:       0,
@@ -18,13 +19,15 @@ const State = {
   },
   logs: [],
   settings: {
-    delayType:    'fixed',
-    fixedDelay:   10,
-    randomMin:    8,
-    randomMax:    15,
-    dailyLimit:   80,
-    stopOnClose:  true,
-    retryCount:   1,
+    delayType:       'fixed',
+    fixedDelay:      10,
+    randomMin:       8,
+    randomMax:       15,
+    dailyLimit:      80,
+    smartSleepCount: 50,
+    smartSleepMins:  10,
+    stopOnClose:     true,
+    retryCount:      1,
   },
 };
 
@@ -74,8 +77,8 @@ function cleanNumber(num) {
 }
 
 // ── Log System ───────────────────────────────────────────
-function addLog(msg, type = 'info') {
-  const entry = { msg, type, time: formatTime() };
+function addLog(msg, type = 'info', skipSave = false, time = null) {
+  const entry = { msg, type, time: time || formatTime() };
   State.logs.push(entry);
 
   const container = $('log-container');
@@ -93,9 +96,61 @@ function addLog(msg, type = 'info') {
   // Keep max 200 logs in DOM
   const items = container.querySelectorAll('.log-item');
   if (items.length > 200) items[items.length - 1].remove();
+
+  if (!skipSave && typeof saveState === 'function') saveState();
 }
 
-// ── Settings Persistence ─────────────────────────────────
+// ── State & Settings Persistence ─────────────────────────
+function saveState() {
+  chrome.storage.local.set({ 
+    wa_data: {
+      message: $('message-input').value,
+      contactsRaw: $('contacts-manual').value,
+      campaignSent: State.campaign.sent,
+      campaignFailed: State.campaign.failed,
+      campaignIndex: State.campaign.currentIndex,
+      logs: State.logs.slice(-50)
+    }
+  });
+}
+
+function loadState(cb) {
+  chrome.storage.local.get('wa_data', ({ wa_data }) => {
+    if (wa_data) {
+      if (wa_data.message) {
+        $('message-input').value = wa_data.message;
+        updateCharCount();
+      }
+      if (wa_data.contactsRaw) {
+        $('contacts-manual').value = wa_data.contactsRaw;
+        parseContacts();
+      }
+      if (wa_data.campaignIndex !== undefined && wa_data.campaignIndex > 0) {
+        State.campaign.sent = wa_data.campaignSent || 0;
+        State.campaign.failed = wa_data.campaignFailed || 0;
+        State.campaign.currentIndex = wa_data.campaignIndex || 0;
+        $('progress-section').style.display = 'block';
+        updateProgress();
+        
+        if (State.campaign.currentIndex < State.contacts.length) {
+          State.campaign.paused = true;
+          State.campaign.running = true;
+          setControlsState(true, true);
+          setStatus('Campaign paused (Popup was closed). Click Resume to continue.');
+        } else {
+          setControlsState(false, false);
+          setStatus('Campaign completed previously.');
+        }
+      }
+      if (wa_data.logs && wa_data.logs.length > 0) {
+         State.logs = []; // clear first
+         wa_data.logs.forEach(l => addLog(l.msg, l.type, true, l.time));
+      }
+    }
+    if (cb) cb();
+  });
+}
+
 function saveSettings() {
   chrome.storage.local.set({ wa_settings: State.settings });
 }
@@ -113,6 +168,8 @@ function applySettingsToUI() {
   $('random-min').value      = State.settings.randomMin;
   $('random-max').value      = State.settings.randomMax;
   $('daily-limit').value     = State.settings.dailyLimit;
+  $('smart-sleep-count').value = State.settings.smartSleepCount;
+  $('smart-sleep-mins').value  = State.settings.smartSleepMins;
   $('stop-on-close').checked = State.settings.stopOnClose;
   $('retry-count').value     = State.settings.retryCount;
 
@@ -127,6 +184,8 @@ function readSettingsFromUI() {
   State.settings.randomMin   = parseInt($('random-min').value) || 8;
   State.settings.randomMax   = parseInt($('random-max').value) || 15;
   State.settings.dailyLimit  = parseInt($('daily-limit').value) || 80;
+  State.settings.smartSleepCount = parseInt($('smart-sleep-count').value) || 50;
+  State.settings.smartSleepMins  = parseInt($('smart-sleep-mins').value) || 10;
   State.settings.stopOnClose = $('stop-on-close').checked;
   State.settings.retryCount  = parseInt($('retry-count').value) || 1;
 }
@@ -205,6 +264,7 @@ function initEmojiPicker() {
       ta.selectionStart = ta.selectionEnd = pos + em.length;
       ta.focus();
       updateCharCount();
+      if (typeof saveState === 'function') saveState();
       $('emoji-panel').classList.add('hidden');
     });
     grid.appendChild(btn);
@@ -231,38 +291,67 @@ function initFileAttachment() {
   const input   = $('file-input');
   const zone    = $('drop-zone');
   const content = $('drop-zone-content');
-  const preview = $('file-preview');
+  const list    = $('file-preview-list');
 
-  function setFile(file) {
-    if (!file) return;
-    if (file.size > 16 * 1024 * 1024) {
-      addLog('File too large (max 16 MB)', 'warn');
+  function renderFiles() {
+    list.innerHTML = '';
+    
+    if (State.attachedFiles.length === 0) {
+      content.style.display = 'block';
       return;
     }
-    State.attachedFile = file;
-    $('file-preview-icon').textContent = getFileIcon(file);
-    $('file-preview-name').textContent = file.name;
-    $('file-preview-size').textContent = formatBytes(file.size);
     content.style.display = 'none';
-    preview.classList.remove('hidden');
+
+    State.attachedFiles.forEach((file, index) => {
+      const el = document.createElement('div');
+      el.className = 'file-preview';
+      el.innerHTML = `
+        <div class="file-preview-icon">${getFileIcon(file)}</div>
+        <div class="file-preview-info">
+          <span class="file-preview-name">${file.name}</span>
+          <span class="file-preview-size">${formatBytes(file.size)}</span>
+        </div>
+        <button class="file-remove-btn" data-index="${index}" title="Remove file">✕</button>
+      `;
+      list.appendChild(el);
+    });
+
+    list.querySelectorAll('.file-remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(e.target.dataset.index);
+        State.attachedFiles.splice(idx, 1);
+        renderFiles();
+      });
+    });
   }
 
-  input.addEventListener('change', () => setFile(input.files[0]));
+  function addFiles(files) {
+    if (!files || !files.length) return;
+    
+    let totalSize = State.attachedFiles.reduce((acc, f) => acc + f.size, 0);
+    
+    for (let i = 0; i < files.length; i++) {
+        totalSize += files[i].size;
+    }
+    
+    if (totalSize > 16 * 1024 * 1024) {
+      addLog('Total files too large (max 16 MB)', 'warn');
+      return;
+    }
+
+    State.attachedFiles = [...State.attachedFiles, ...Array.from(files)];
+    renderFiles();
+  }
+
+  input.addEventListener('change', () => addFiles(input.files));
 
   zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', (e) => {
     e.preventDefault();
     zone.classList.remove('drag-over');
-    setFile(e.dataTransfer.files[0]);
-  });
-
-  $('file-remove-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    State.attachedFile = null;
-    input.value = '';
-    content.style.display = '';
-    preview.classList.add('hidden');
+    addFiles(e.dataTransfer.files);
   });
 }
 
@@ -292,13 +381,38 @@ function initContactUpload() {
   dropZone.addEventListener('click', () => fileInput.click());
 }
 
+// ── Spintax & Personalization ──────────────────────────────
+function parseSpintax(text) {
+  const spintaxRegex = /\{([^}]+)\}/g;
+  let matches;
+  while ((matches = spintaxRegex.exec(text)) !== null) {
+      if (matches[1].toLowerCase() === 'name') continue; // Skip {name}
+      const options = matches[1].split('|');
+      const randomOption = options[Math.floor(Math.random() * options.length)];
+      text = text.substring(0, matches.index) + randomOption + text.substring(matches.index + matches[0].length);
+      spintaxRegex.lastIndex = 0; // Reset index to rescan
+  }
+  return text;
+}
+
+function processMessage(msgTemplate, contactName) {
+  if (!msgTemplate) return '';
+  let finalMsg = parseSpintax(msgTemplate);
+  if (contactName) {
+    finalMsg = finalMsg.replace(/\{name\}/gi, contactName.trim());
+  } else {
+    finalMsg = finalMsg.replace(/\{name\}/gi, ''); // Fallback empty
+  }
+  return finalMsg.trim();
+}
+
 // ── Parse Contacts ────────────────────────────────────────
 function parseContacts() {
   const raw   = $('contacts-manual').value.trim();
   if (!raw) return;
 
-  // Split by newlines or commas or semicolons
-  const lines = raw.split(/[\n,;]+/).map(l => l.trim()).filter(Boolean);
+  // Split by newlines (we don't split by commas anymore because CSV has commas for names)
+  const lines = raw.split(/[\n;\r]+/).map(l => l.trim()).filter(Boolean);
 
   // Deduplicate
   const seen  = new Set();
@@ -306,19 +420,24 @@ function parseContacts() {
 
   lines.forEach(line => {
     // Try to extract number (handles "Name, 919876543210" CSV style)
-    const match = line.match(/(\d[\d\s\-\(\)]{9,})/);
-    if (!match) {
-      parsed.push({ number: line, valid: false });
+    const numMatch = line.match(/(\d[\d\s\-\(\)]{9,})/);
+    if (!numMatch) {
+      parsed.push({ number: line, name: '', valid: false });
       return;
     }
-    const num = cleanNumber(match[1]);
+    const num = cleanNumber(numMatch[1]);
+    
+    // Extract everything else as a potential name
+    let name = line.replace(numMatch[0], '').replace(/^[,:\s-]+|[,:\s-]+$/g, '').trim();
+
     if (seen.has(num)) return;
     seen.add(num);
-    parsed.push({ number: num, valid: validatePhoneNumber(num) });
+    parsed.push({ number: num, name: name, valid: validatePhoneNumber(num) });
   });
 
   State.contacts = parsed;
   renderContactList();
+  if (typeof saveState === 'function') saveState();
 }
 
 function renderContactList() {
@@ -344,8 +463,12 @@ function renderContactList() {
   State.contacts.forEach((c, i) => {
     const item = document.createElement('div');
     item.className = 'contact-item';
+    const nameSpan = c.name ? `<span style="font-size: 10px; color: var(--text-muted); margin-left: 6px;">(${c.name})</span>` : '';
     item.innerHTML = `
-      <span class="contact-number">+${c.number}</span>
+      <div>
+        <span class="contact-number">+${c.number}</span>
+        ${nameSpan}
+      </div>
       <span class="${c.valid ? 'contact-status-valid' : 'contact-status-invalid'}">${c.valid ? '✓ Valid' : '✗ Invalid'}</span>
     `;
     list.appendChild(item);
@@ -376,6 +499,8 @@ function updateProgress() {
   $('stat-remaining').textContent = remaining;
   $('progress-bar-fill').style.width = pct + '%';
   $('progress-percent').textContent  = pct + '%';
+
+  if (typeof saveState === 'function') saveState();
 }
 
 function setStatus(msg) {
@@ -389,7 +514,7 @@ function setControlsState(running, paused) {
   $('btn-stop').style.display   = running ? '' : 'none';
 }
 
-async function sendToNumber(number, message, fileDataUrl, fileName, fileType, retryLeft) {
+async function sendToNumber(number, message, files, retryLeft) {
   return new Promise((resolve) => {
     getWaTab((waTab) => {
       if (!waTab) {
@@ -407,9 +532,7 @@ async function sendToNumber(number, message, fileDataUrl, fileName, fileType, re
             action:     'sendMessage',
             number,
             message,
-            fileDataUrl,
-            fileName,
-            fileType,
+            files
           };
 
           chrome.tabs.sendMessage(waTab.id, payload, (response) => {
@@ -421,7 +544,7 @@ async function sendToNumber(number, message, fileDataUrl, fileName, fileType, re
               const err = response ? response.error : 'Unknown error';
               if (retryLeft > 0) {
                 setTimeout(() => {
-                  sendToNumber(number, message, fileDataUrl, fileName, fileType, retryLeft - 1)
+                  sendToNumber(number, message, files, retryLeft - 1)
                     .then(resolve);
                 }, 3000);
               } else {
@@ -455,26 +578,25 @@ async function runCampaign() {
     addLog(`Daily limit is ${maxAllowed}. Will send to first ${maxAllowed} contacts.`, 'warn');
   }
 
-  // Prepare file if any
-  let fileDataUrl = null;
-  let fileName    = null;
-  let fileType    = null;
+  // Prepare files if any
+  let filePayloads = [];
 
-  if (State.attachedFile) {
+  if (State.attachedFiles && State.attachedFiles.length > 0) {
     const readFile = (file) => new Promise((res, rej) => {
       const r = new FileReader();
-      r.onload = (e) => res(e.target.result);
+      r.onload = (e) => res({ dataUrl: e.target.result, name: file.name, type: file.type });
       r.onerror = rej;
       r.readAsDataURL(file);
     });
-    fileDataUrl = await readFile(State.attachedFile);
-    fileName    = State.attachedFile.name;
-    fileType    = State.attachedFile.type;
-    addLog(`Attachment ready: ${fileName}`, 'info');
+    for (const f of State.attachedFiles) {
+      filePayloads.push(await readFile(f));
+    }
+    addLog(`${filePayloads.length} attachment(s) ready`, 'info');
   }
 
   State.campaign.running = true;
   State.campaign.paused  = false;
+  State.campaign.loopActive = true;
 
   $('progress-section').style.display = 'block';
   setControlsState(true, false);
@@ -508,15 +630,16 @@ async function runCampaign() {
     State.campaign.currentIndex = i;
     const contact = validContacts[i];
 
+    // Personalize message
+    const processedMsg = processMessage(message, contact.name);
+
     setStatus(`Sending to +${contact.number}… (${i + 1}/${validContacts.length})`);
     updateProgress();
 
     const result = await sendToNumber(
       contact.number,
-      message,
-      fileDataUrl,
-      fileName,
-      fileType,
+      processedMsg,
+      filePayloads,
       State.settings.retryCount
     );
 
@@ -530,9 +653,21 @@ async function runCampaign() {
     }
 
     updateProgress();
+    if (typeof saveState === 'function') saveState();
 
     // Delay before next (skip delay after last)
     if (i < validContacts.length - 1 && State.campaign.running && !State.campaign.paused) {
+      // Smart Sleep check
+      if ((sentToday % State.settings.smartSleepCount) === 0 && sentToday > 0) {
+         const sleepMins = State.settings.smartSleepMins;
+         addLog(`Anti-Ban: Sleeping for ${sleepMins} mins...`, 'info');
+         for (let m = sleepMins * 60; m > 0; m--) {
+             if (!State.campaign.running || State.campaign.paused) break;
+             setStatus(`Anti-Ban Sleep: ${m}s remaining`);
+             await sleep(1000);
+         }
+      }
+      
       const delay = getDelay();
       const secs  = Math.round(delay / 1000);
       setStatus(`Waiting ${secs}s before next message…`);
@@ -540,6 +675,7 @@ async function runCampaign() {
     }
   }
 
+  State.campaign.loopActive = false;
   if (State.campaign.running && !State.campaign.paused) {
     State.campaign.running = false;
     setControlsState(false, false);
@@ -569,14 +705,23 @@ function exportLogs() {
 document.addEventListener('DOMContentLoaded', () => {
   // Load settings first
   loadSettings(() => {
-    initTabs();
-    initEmojiPicker();
-    initFileAttachment();
-    initContactUpload();
-    checkWhatsAppStatus();
+    loadState(() => {
+      initTabs();
+      initEmojiPicker();
+      initFileAttachment();
+      initContactUpload();
+      checkWhatsAppStatus();
+    });
 
     // Char counter
-    $('message-input').addEventListener('input', updateCharCount);
+    $('message-input').addEventListener('input', () => {
+      updateCharCount();
+      if (typeof saveState === 'function') saveState();
+    });
+
+    $('contacts-manual').addEventListener('input', () => {
+      if (typeof saveState === 'function') saveState();
+    });
 
     // Delay type toggle
     $('delay-fixed').addEventListener('change', updateDelayUI);
@@ -590,12 +735,15 @@ document.addEventListener('DOMContentLoaded', () => {
       $('contacts-manual').value = '';
       State.contacts = [];
       $('contacts-preview-section').style.display = 'none';
+      if (typeof saveState === 'function') saveState();
     });
 
     // Remove invalid
     $('btn-remove-invalid').addEventListener('click', () => {
       State.contacts = State.contacts.filter(c => c.valid);
+      $('contacts-manual').value = State.contacts.map(c => c.number).join('\n');
       renderContactList();
+      if (typeof saveState === 'function') saveState();
     });
 
     // Save settings
@@ -611,6 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
       State.logs = [];
       $('log-container').innerHTML = '<div class="log-empty">No activity yet. Start a campaign to see logs.</div>';
       $('logs-footer').style.display = 'none';
+      if (typeof saveState === 'function') saveState();
     });
 
     // Export logs
@@ -634,6 +783,9 @@ document.addEventListener('DOMContentLoaded', () => {
       State.campaign.paused = false;
       setControlsState(true, false);
       addLog('Campaign resumed.', 'info');
+      if (!State.campaign.loopActive) {
+        runCampaign();
+      }
     });
 
     $('btn-stop').addEventListener('click', () => {
@@ -643,6 +795,48 @@ document.addEventListener('DOMContentLoaded', () => {
       setStatus('Campaign stopped by user.');
       addLog('Campaign stopped.', 'warn');
     });
+
+    // Quick Chat
+    $('btn-quickchat-open').addEventListener('click', () => {
+      const num = cleanNumber($('quickchat-number').value);
+      if (validatePhoneNumber(num)) {
+        getWaTab((waTab) => {
+          const url = `https://web.whatsapp.com/send?phone=${num}`;
+          if (waTab) {
+            chrome.tabs.update(waTab.id, { active: true, url });
+          } else {
+            chrome.tabs.create({ url });
+          }
+        });
+      } else {
+        alert('Please enter a valid phone number with country code.');
+      }
+    });
+
+    // Extract Group Contacts
+    const btnExtract = document.getElementById('btn-extract-group');
+    if (btnExtract) {
+      btnExtract.addEventListener('click', () => {
+        getWaTab((waTab) => {
+          if (!waTab) {
+            alert('Please open WhatsApp Web first.');
+            return;
+          }
+          chrome.tabs.update(waTab.id, { active: true });
+          chrome.tabs.sendMessage(waTab.id, { action: 'extractGroup' }, (res) => {
+            if (res && res.contacts) {
+              const curr = $('contacts-manual').value.trim();
+              $('contacts-manual').value = (curr ? curr + '\n' : '') + res.contacts.join('\n');
+              parseContacts();
+              addLog(`Extracted ${res.contacts.length} group contacts`, 'success');
+              if (typeof saveState === 'function') saveState();
+            } else {
+              alert('Failed to extract. Make sure a Group info sidebar is open on WhatsApp web.');
+            }
+          });
+        });
+      });
+    }
 
     // Periodic WA status check
     setInterval(checkWhatsAppStatus, 10000);
