@@ -128,6 +128,9 @@ function renderContactList() {
   $('invalid-count-badge').style.display = invalid ? 'inline-flex' : 'none';
   $('btn-remove-invalid').style.display = invalid ? 'inline-flex' : 'none';
   $('btn-clean-list').style.display = failCount ? 'inline-flex' : 'none';
+  
+  // Dynamic Visibility: Hide Validate button if no contacts exist
+  $('btn-validate-contacts').style.display = State.contacts.length > 0 ? 'inline-flex' : 'none';
 
   list.innerHTML = '';
   State.contacts.forEach((c, i) => {
