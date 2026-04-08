@@ -67,15 +67,19 @@ html, body {
 }
 
 .logo-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--accent-green), var(--accent-green2));
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+  flex-shrink: 0;
+}
+
+.logo-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .header-text {
@@ -96,6 +100,12 @@ html, body {
   font-weight: 500;
 }
 
+.header-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .status-badge {
   display: flex;
   align-items: center;
@@ -104,12 +114,18 @@ html, body {
   border-radius: 20px;
   font-size: 11px;
   font-weight: 600;
-  transition: var(--transition);
+  backdrop-filter: blur(10px);
+}
+
+.status-limit {
+  background: rgba(114, 9, 183, 0.15);
+  color: #b5179e;
+  border: 1px solid rgba(114, 9, 183, 0.2);
 }
 
 .status-badge.status-checking {
-  background: rgba(139,148,158,0.12);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
 }
 .status-badge.status-online {
   background: rgba(37,211,102,0.12);
@@ -375,6 +391,27 @@ html, body {
 .stat-remaining .stat-value { color: var(--accent-blue); }
 .stat-label { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
 
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', sans-serif;
+  width: 450px !important;
+  height: 600px !important;
+  background-color: #0b0e11;
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 450px !important;
+  height: 600px !important;
+  background: linear-gradient(135deg, #0b0e11 0%, #151a1e 100%);
+  position: relative;
+  overflow: hidden;
+}
+
 .progress-bar-wrap {
   display: flex;
   align-items: center;
@@ -396,6 +433,68 @@ html, body {
   box-shadow: 0 0 8px rgba(37,211,102,0.4);
 }
 .progress-percent { font-size: 11px; font-weight: 700; color: var(--accent-green); min-width: 30px; }
+
+/* ── Premium Guide Tab ── */
+.guide-header { text-align: center; margin: 10px 0 20px; }
+.guide-header h3 { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
+.guide-header p { font-size: 12px; color: var(--text-muted); }
+
+.guide-container { display: flex; flex-direction: column; gap: 16px; padding: 5px 0; }
+.guide-item {
+  position: relative;
+  display: flex;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 20px 20px 20px 60px;
+  border-radius: 16px;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+.guide-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-2px);
+  border-color: var(--accent-green);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+.guide-step-glass {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  background: rgba(37, 211, 102, 0.1);
+  border: 1px solid rgba(37, 211, 102, 0.3);
+  color: var(--accent-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 14px;
+  text-shadow: 0 0 10px rgba(37, 211, 102, 0.5);
+}
+.guide-title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+.guide-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+.guide-pro-card {
+  display: flex;
+  gap: 15px;
+  background: linear-gradient(135deg, rgba(114, 9, 183, 0.1), rgba(37, 211, 102, 0.05));
+  border: 1px solid rgba(114, 9, 183, 0.2);
+  padding: 20px;
+  border-radius: 16px;
+  margin-top: 10px;
+}
+.pro-icon-glow {
+  font-size: 24px;
+  filter: drop-shadow(0 0 8px #7209b7);
+  animation: float 3s ease-in-out infinite;
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
 
 .current-status {
   font-size: 11px;
@@ -529,6 +628,9 @@ html, body {
 }
 .contact-status-valid   { font-size: 10px; color: var(--accent-green); font-weight: 600; }
 .contact-status-invalid { font-size: 10px; color: var(--accent-red); font-weight: 600; }
+.contact-status-checking { font-size: 10px; color: var(--accent-blue); font-weight: 600; font-style: italic; }
+.contact-status-wa-ready { font-size: 10px; color: var(--accent-green); font-weight: 700; background: rgba(37,211,102,0.1); padding: 1px 4px; border-radius: 4px; }
+.contact-status-wa-fail  { font-size: 10px; color: var(--accent-red); font-weight: 700; background: rgba(248,81,73,0.1); padding: 1px 4px; border-radius: 4px; }
 
 /* ── Settings ── */
 .delay-type-selector {
@@ -557,7 +659,6 @@ html, body {
 .radio-card-title { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
 .radio-card-desc  { font-size: 10px; color: var(--text-muted); }
 
-.delay-inputs { }
 .delay-inputs.hidden { display: none; }
 
 .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -584,6 +685,7 @@ html, body {
   padding: 7px 10px;
   outline: none;
   transition: border-color 0.2s;
+  appearance: textfield;
   -moz-appearance: textfield;
 }
 .number-input:focus { border-color: var(--accent-green); }

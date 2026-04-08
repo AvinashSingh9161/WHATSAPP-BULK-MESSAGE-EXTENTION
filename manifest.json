@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WA Bulk Sender",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Send bulk WhatsApp messages with attachments, smart delays, and campaign controls directly from WhatsApp Web.",
   "permissions": [
     "activeTab",

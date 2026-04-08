@@ -103,18 +103,34 @@ async function attachFiles(filesArray) {
 
 async function sendMessage(message, files) {
   try {
-    // Handle invalid number popup
-    const invalidSelector = 'div[data-animate-modal-popup="true"]';
-    const isInvalid = document.querySelector(invalidSelector);
-    if (isInvalid && isInvalid.innerText.includes('Phone number shared via url is invalid')) {
-        const okBtn = isInvalid.querySelector('button');
-        if(okBtn) okBtn.click();
-        throw new Error('Phone number is invalid.');
+    // Robust Check for Status
+    let checkAttempts = 0;
+    const maxAttempts = 20; // 20s total
+
+    while (checkAttempts < maxAttempts) {
+        // 1. Check for Invalid Modal
+        const invalidSelector = 'div[data-animate-modal-popup="true"]';
+        const isInvalid = document.querySelector(invalidSelector);
+        if (isInvalid && (isInvalid.innerText.includes('Phone number shared via url is invalid') || isInvalid.innerText.includes("isn't on WhatsApp"))) {
+            const okBtn = isInvalid.querySelector('button');
+            if (okBtn) okBtn.click();
+            throw new Error('INVALID_NUMBER');
+        }
+
+        // 2. Check for Chat Box
+        const chatBoxSelector = 'div[contenteditable="true"][data-tab="10"], div[title="Type a message"]';
+        const chatBox = document.querySelector(chatBoxSelector);
+        if (chatBox) break; // Found it!
+
+        await DELAY(1000);
+        checkAttempts++;
+        if (checkAttempts === maxAttempts) {
+            throw new Error('TIMEOUT_CHAT_NOT_LOADED');
+        }
     }
 
-    // Wait for the main input box
     const chatBoxSelector = 'div[contenteditable="true"][data-tab="10"], div[title="Type a message"]';
-    const chatBox = await waitForElement(chatBoxSelector, 15000); // Wait up to 15s because web.whatsapp is incredibly slow
+    const chatBox = document.querySelector(chatBoxSelector);
 
     // If file is attached, process it first
     if (files && files.length > 0) {
