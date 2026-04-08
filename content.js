@@ -124,32 +124,17 @@ async function sendMessage(message, fileDataUrl, fileName, fileType) {
       await simulatePaste(chatBox, message);
       await DELAY(1000);
 
-      // Focus and dispatch a robust 'Enter' keystroke
-      chatBox.focus();
-      const enterEvt1 = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });
-      const enterEvt2 = new KeyboardEvent('keyup',   { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });
-      chatBox.dispatchEvent(enterEvt1);
-      chatBox.dispatchEvent(enterEvt2);
-      
-      // Fallback: Exhaustive MouseEvent dispatches on the send button hierarchy
       const sendBtn = document.querySelector('button[aria-label="Send"], span[data-icon="send"], span[data-icon="wds-ic-send-filled"]');
       if (sendBtn) {
         const btnEl = sendBtn.closest('button') || sendBtn;
-        
-        // 1. Dispatch robust modern mouse events to the Button wrapper
-        ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(evtType => {
-          btnEl.dispatchEvent(new MouseEvent(evtType, { view: window, bubbles: true, cancelable: true, buttons: 1 }));
-        });
-
-        // 2. Dispatch legacy mouse events directly to the span/icon (React occasionally bonds handlers to inner SVG containers)
-        ['mouseover', 'mousedown', 'mouseup', 'click'].forEach(evtType => {
-          const dispatchEvt = document.createEvent('MouseEvents');
-          dispatchEvt.initEvent(evtType, true, true);
-          sendBtn.dispatchEvent(dispatchEvt);
-        });
-
-        // 3. Simple native click
-        try { btnEl.click(); } catch(e){}
+        btnEl.click();
+      } else {
+        // Fallback: dispatch 'Enter' keystroke
+        chatBox.focus();
+        const enterEvt1 = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });
+        const enterEvt2 = new KeyboardEvent('keyup',   { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });
+        chatBox.dispatchEvent(enterEvt1);
+        chatBox.dispatchEvent(enterEvt2);
       }
 
       await DELAY(1000); // Wait for send animation
